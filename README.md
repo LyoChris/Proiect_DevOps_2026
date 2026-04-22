@@ -11,6 +11,34 @@ unde pipeline-ul din gitlab_pipeline/.gitlab-ci.yml rulează testele, construie�
 o publică în registry și apoi face deploy automat cu gitlab_pipeline/deploy.yaml. 
 Aplicația rulează containerizat prin docker si se foloseste __Maven__ pentru build-ul aplicatiei.
 
+## Diagrama proiect
+
+```
+  app.fiipractic.lan         
+----------------------        
+ Docker                        
+ Nginx                          
+ Backend container            
+ PostgreSQL container       
+ Netdata
+-----------------------
+      ^                       
+      | 
+      |                     Deploy via Ansible 
+      |                             ^
+      |                             |
+      |     test / build / push / deploy
+      |      ^
+      |      |
+      | CI/CD pipeline
+      |
+ gitlab.fiipractic.lan
+------------------------
+ Gitlab CE
+ GitLab Runner
+ Gitlab Container Registry
+ Ansible           
+```
 
 ## Structura proiectului
 ```text
