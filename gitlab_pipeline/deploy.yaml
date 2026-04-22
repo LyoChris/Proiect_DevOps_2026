@@ -1,0 +1,151 @@
+---
+- name: Deploy application with Docker Compose
+  hosts: all
+  become: yes
+
+  vars:
+    registry_url: "{{ lookup('env', 'CI_REGISTRY') }}"
+    registry_user: "{{ lookup('env', 'CI_REGISTRY_USER') }}"
+    registry_password: "{{ lookup('env', 'CI_REGISTRY_PASSWORD') }}"
+    app_image: "{{ lookup('env', 'CI_REGISTRY_IMAGE') }}:{{ lookup('env', 'CI_COMMIT_SHORT_SHA') }}"
+    deploy_path: /opt/tutor-backend
+
+    jwt_secret: "{{ lookup('env', 'JWT_SECRET') }}"
+    mail_host: "{{ lookup('env', 'MAIL_HOST') }}"
+    mail_port: "{{ lookup('env', 'MAIL_PORT') }}"
+    mail_username: "{{ lookup('env', 'MAIL_USERNAME') }}"
+    mail_password: "{{ lookup('env', 'MAIL_PASSWORD') }}"
+    mail_from: "{{ lookup('env', 'MAIL_FROM') }}"
+
+  tasks:
+    - name: Create deploy directory
+      file:
+        path: "{{ deploy_path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Copy docker-compose file
+      copy:
+        src: backend/docker-compose.yml
+        dest: "{{ deploy_path }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Checking if another image is already running
+      shell: docker ps -a --filter "name=^tutor-backend$" --format "{{'{{'}}.Image{{'}}'}}"
+      register: current_backend_image
+      changed_when: false
+
+    - name: Save current image for rollback
+      set_fact:
+        old_app_image: "{{ current_backend_image.stdout }}"
+      when: current_backend_image.stdout | length > 0
+
+    - name: Remove existing container if exists
+      shell: docker rm -f tutor-backend
+      when: current_backend_image.stdout | length > 0
+      ignore_errors: yes
+
+    - name: Remove old image if exists
+      shell: docker image rm -f "{{ old_app_image }}"
+      when: old_app_image is defined and old_app_image | length > 0
+      ignore_errors: yes
+
+    - name: Create .env file
+      copy:
+        dest: "{{ deploy_path }}/.env"
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          APP_IMAGE={{ app_image }}
+          JWT_SECRET={{ jwt_secret }}
+          MAIL_HOST={{ mail_host }}
+          MAIL_PORT={{ mail_port }}
+          MAIL_USERNAME={{ mail_username }}
+          MAIL_PASSWORD={{ mail_password }}
+          MAIL_FROM={{ mail_from }}
+
+    - name: Login to GitLab Container Registry
+      shell: echo "{{ registry_password }}" | docker login -u "{{ registry_user }}" --password-stdin "{{ registry_url }}"
+      changed_when: true
+
+    - name: Deploy application block
+      block:
+        - name: Stop existing compose stack
+          shell: docker compose down
+          args:
+            chdir: "{{ deploy_path }}"
+          ignore_errors: yes
+
+        - name: Pull fresh images
+          shell: docker compose pull
+          args:
+            chdir: "{{ deploy_path }}"
+
+        - name: Start compose up
+          shell: docker compose up -d
+          args:
+            chdir: "{{ deploy_path }}"
+
+        - name: Wait for backend to become available
+          uri:
+            url: http://127.0.0.1:8067/actuator/health
+            method: GET
+            status_code: 200
+          register: healthcheck
+          retries: 20
+          delay: 5
+          until: healthcheck.status == 200
+
+      rescue:
+        - name: Restore .env with old image
+          copy:
+            dest: "{{ deploy_path }}/.env"
+            owner: root
+            group: root
+            mode: '0600'
+            content: |
+              APP_IMAGE={{ old_app_image }}
+              JWT_SECRET={{ jwt_secret }}
+              MAIL_HOST={{ mail_host }}
+              MAIL_PORT={{ mail_port }}
+              MAIL_USERNAME={{ mail_username }}
+              MAIL_PASSWORD={{ mail_password }}
+              MAIL_FROM={{ mail_from }}
+
+        - name: Stop failed compose stack
+          shell: docker compose down
+          args:
+            chdir: "{{ deploy_path }}"
+          ignore_errors: yes
+
+        - name: Pull old image for rollback
+          shell: docker pull "{{ old_app_image }}"
+          when: old_app_image is defined and old_app_image | length > 0
+
+        - name: Start previous compose stack
+          shell: docker compose up -d
+          args:
+            chdir: "{{ deploy_path }}"
+
+        - name: Wait for rolled back backend to become available
+          uri:
+            url: http://127.0.0.1:8067/actuator/health
+            method: GET
+            status_code: 200
+          register: rollback_healthcheck
+          retries: 20
+          delay: 5
+          until: rollback_healthcheck.status == 200
+
+        - name: Stop play after successful rollback
+          fail:
+            msg: "Deploy failed, rollback completed successfully."
+
+    - name: Logout from GitLab Container Registry
+      shell: docker logout "{{ registry_url }}"
+      changed_when: true

@@ -1,0 +1,88 @@
+include:
+  - template: 'Workflows/Branch-Pipelines.gitlab-ci.yml'
+
+stages:
+  - test
+  - build
+  - push
+  - deploy
+
+test-backend:
+  stage: test
+  script:
+    - echo "Create test network..."
+    - docker network create test-network || true
+    - echo "Start PostgreSQL for tests..."
+    - docker rm -f test-postgres || true
+    - |
+      docker run -d --name test-postgres \
+        --network test-network \
+        -e POSTGRES_DB=adaptive_tutor \
+        -e POSTGRES_USER=user \
+        -e POSTGRES_PASSWORD=password \
+        postgres:15-alpine
+    - echo "Wait for PostgreSQL..."
+    - until docker exec test-postgres pg_isready -U user -d adaptive_tutor; do sleep 2; done
+    - echo "Run all backend tests inside Docker..."
+    - |
+      docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        --network test-network \
+        -v "$PWD/backend":/app \
+        -w /app \
+        -e JWT_SECRET=fiipractic_test_secret_key_which_is_long_enough_123456 \
+        -e SPRING_DATASOURCE_URL=jdbc:postgresql://test-postgres:5432/adaptive_tutor \
+        -e SPRING_DATASOURCE_USERNAME=user \
+        -e SPRING_DATASOURCE_PASSWORD=password \
+        maven:3.9.6-eclipse-temurin-17 \
+        mvn test
+  after_script:
+    - echo "Cleanup test containers..."
+    - docker rm -f test-postgres || true
+    - docker network rm test-network || true
+    - echo "Test step finished."
+  tags:
+    - build
+
+build-image:
+  stage: build
+  before_script:
+    - echo "Login to Docker Local Repository..."
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - echo "Build backend Docker image..."
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA -f ./backend/Dockerfile ./backend
+    - echo "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  after_script:
+    - echo "Script executed successfully."
+    - echo "Logout from Docker Local Repository..."
+    - docker logout
+  tags:
+    - build
+
+push-image:
+  stage: push
+  before_script:
+    - echo "Login to Docker Local Repository..."
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - echo "Push backend Docker image..."
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - echo "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  after_script:
+    - echo "Script executed successfully."
+    - echo "Logout from Docker Local Repository..."
+    - docker logout
+  tags:
+    - build
+
+deploy-image:
+  stage: deploy
+  script:
+    - echo "Deploy full backend application with Ansible..."
+    - ansible-playbook -i "app.fiipractic.lan," -u root deploy.yaml
+  after_script:
+    - echo "Deploy step finished."
+  tags:
+    - build
+

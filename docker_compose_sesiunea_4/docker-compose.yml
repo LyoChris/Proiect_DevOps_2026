@@ -1,0 +1,31 @@
+services:
+  springboot1:
+    image: fiipractic_springboot:2.0
+    container_name: springboot1
+    environment:
+      MY_VAR: "App_1"
+    expose:
+      - "8080"
+
+  springboot2:
+    image: fiipractic_springboot:2.0
+    container_name: springboot2
+    environment:
+      MY_VAR: "App_2"
+    expose:
+      - "8080"
+
+  nginx:
+    image: nginx
+    container_name: container_nginx_3
+    ports:
+      # - "8443:443"  
+      - "443:443"
+    volumes:
+      - /root/Nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /root/Nginx/index.html:/var/www/example/index.html:ro
+      - /root/Nginx/app.key:/usr/share/easy-rsa/3/pki/private/app.key:ro
+      - /root/Nginx/app.crt:/usr/share/easy-rsa/3/pki/issued/app.crt:ro
+    depends_on:
+      - springboot1
+      - springboot2

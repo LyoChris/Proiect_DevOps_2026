@@ -1,0 +1,10 @@
+# Vagrant
+.vagrant/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# swap files (ex: Kate, Vim)
+*.swp
+*.swo

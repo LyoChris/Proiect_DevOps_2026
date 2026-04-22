@@ -1,0 +1,183 @@
+---
+- name: Common configs for VMs
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Stop firewalld
+      service:
+        name: firewalld
+        state: stopped
+        enabled: false
+
+    - name: Set time zone
+      timezone:
+        name: Europe/Bucharest
+
+    - name: Copy Root CA
+      copy:
+        src: ./cert/ca.crt # aici am copiat certificatul din /usr/share/easy-rsa/3/pki/ca.crt in ./cert/ca.crt inainte de a rula playbook-ul
+        dest: /etc/pki/ca-trust/source/anchors/
+        owner: root
+        group: root
+        mode: '0744'
+
+    - name: Update CA's
+      command: update-ca-trust
+
+    - name: PermitRootLogin prohibit-password
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin prohibit-password'
+        backup: yes
+
+    - name: no PasswordAuthentication for ssh
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+        backup: yes
+
+    - name: Create banner file on both machines
+      copy:
+        content: " ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠛⠉⣀⡠⠤⠤⣤⡀⣀⣤⣄⠀⠀⠉⠻⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠋⠀⣠⣤⣤⣶⡶⠖⣒⣀⣈⣛⣋⣉⠓⠠⠀⠀⠀⠙⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠋⢀⣴⣾⣿⡿⢋⣡⣶⣿⣿⣿⣿⣿⡟⣿⣿⣶⣄⠀⠀⠀⠀⠈⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠋⠀⣰⣿⣿⡿⢋⣴⣿⣿⣿⣿⣿⣿⢿⡏⢧⠘⣟⠻⣝⣦⠀⠀⠀⠀⠀⠈⠿⣿⣿⣿⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⢀⠞⣿⣿⠟⣠⣿⠏⣼⣿⢰⣿⣽⡏⢸⣿⢸⡄⠘⠦⣹⣿⣷⡀⠀⠀⠀⠀⠀⢹⣿⣿⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⢠⣎⣼⡿⠁⢰⣿⠏⣼⣿⡇⢸⣿⣯⣧⣸⣿⠈⡇⣷⡄⢻⣿⣿⣧⠀⠀⠀⠀⠀⠂⢻⣿⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⠃⠀⢻⣿⠏⠀⠀⣸⠏⣰⣿⡿⠃⠘⠛⠿⣿⣿⡿⢠⠀⠿⠟⠀⠻⢿⡿⡇⠀⠀⠀⠀⠀⠈⢿⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⡏⠀⢀⡟⠁⡀⢀⠀⡟⢠⡿⠃⣴⠾⠛⠁⠀⠈⠋⠇⠘⢀⣴⡶⠟⠀⠀⠀⠻⠀⠀⠀⠀⠀⠈⠘⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⠁⠀⠜⢀⠜⠀⣼⠀⣅⠟⡁⠈⠁⠀⠀⠀⠀⠀⠀⠀⠁⠘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⢃⠀⠀⠀⠀⠀⢠⡇⢸⣿⠄⢳⡀⠀⠀⠀⠀⠀⠀⠀⠀⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠹⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⢃⠂⠀⠀⠀⠀⠀⠈⣧⠈⣿⠀⠘⣿⡆⠀⢀⣀⠀⠀⣠⣾⡇⢰⣤⡀⠀⢠⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⢻⣿⣿\n
+                  ⣿⣿⣿⣿⡿⠡⠀⠀⠀⠀⠀⠀⠀⠀⣿⠀⢻⠀⡀⢻⠇⠢⠸⣿⠀⢾⣿⣿⠇⢸⣿⠇⠀⠾⠿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿\n
+                  ⣿⣿⣿⣿⡴⢠⠀⠀⠀⠀⢀⠀⠀⠀⢸⠇⠈⠂⠉⠈⠀⠛⠀⣧⠀⠸⣿⠋⠀⢸⡟⠀⠀⠋⠛⠣⠀⠀⠀⠀⠀⠀⠀⡇⠀⠀⠐⣿⣿\n
+                  ⣿⣿⣿⣿⢃⠏⠀⠀⡀⠀⠈⠀⠀⠀⡀⢃⠀⡀⠀⠀⣀⠀⣀⠈⢨⡆⠛⠀⢸⠘⠁⠀⢀⣀⡠⠆⠀⠀⠀⠀⠀⠀⠐⣼⣧⠁⢸⣿⣿\n
+                  ⣿⣿⣿⣿⣾⣾⠘⠀⡇⠀⠀⠀⠀⠀⣷⠀⠀⠹⣦⣰⣶⣾⣿⣧⣤⣿⣄⣂⡟⣠⣶⣦⣤⣤⡶⠀⠀⠀⠀⠀⠀⠀⣾⣿⡗⡀⠘⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣧⡀⢡⠃⠀⠀⢸⡄⢿⠀⠁⢠⡙⢿⣿⣿⣿⣿⣿⣿⣿⡇⣿⣿⣿⣿⣿⣿⣤⡞⠀⠀⠀⠀⠀⠀⠙⠿⠾⠃⣠⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⡇⠜⠀⠀⠀⠸⡇⢸⡆⣌⠀⠹⣶⣾⣿⣿⣿⣿⣿⣿⣇⢋⣠⣿⣿⣿⣿⡟⣁⠀⢰⣷⢠⡇⠀⠘⢳⣶⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⡗⠀⠀⠀⠀⠀⠁⠀⡇⠁⠆⠀⠈⢿⣿⣿⣿⡛⠿⠿⠿⠿⠿⣿⣿⣿⠏⣴⣿⠀⢸⡇⢸⡄⠀⠀⠉⣿⣿⣿⣿⣿\n
+                  ⣿⣿⣿⣿⣿⣿⣿⣇⠀⠀⢠⡀⠀⠀⠀⠀⠀⠀⠀⣌⢠⠙⠿⣿⣿⣷⣶⣶⣶⣿⣿⠟⠁⠈⠉⠁⠀⣽⠇⠘⠁⠀⠀⠈⣸⣿⣿⣿⣿\n
+                  ⣿⣿⠿⠿⠿⠿⠟⠛⣀⠀⠀⠙⠶⡄⠀⠀⠀⡄⡄⣿⣌⢳⡀⢌⠛⢿⣿⣿⡿⠋⡀⢀⡆⠘⣣⠀⠀⠛⠀⠀⠀⠂⠐⣰⣿⣿⣿⣿⣿\n
+                  ⣿⣥⣶⣿⣿⣭⣭⣭⣤⣶⠄⠐⠀⠀⠀⠀⠀⠘⣿⣿⣿⣦⣙⠈⢻⣶⣬⣥⣴⠏⣠⣿⣿⠀⣀⠀⠰⠀⠀⢰⡴⢂⣴⣿⣿⣿⣿⣿⣿\n
+                  ⣾⣿⣿⣿⣿⣿⠟⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⢃⣿⣿⣿⣿⣿⡆⠘⠿⠿⠁⢊⢻⣿⣿⡆⢹⡄⠘⠀⠀⠐⢦⣍⣙⠻⢿⣿⣿⣿⣿\n
+                  ⣿⡇⢻⣿⣿⠁⠀⠀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿⣿⣿⡿⢀⣦⠀⠀⠐⠈⢠⣿⣿⣇⡄⠃⠀⠀⠀⠀⠀⠉⠉⠙⠒⠂⢮⢭⣿\n
+                  ⣿⡇⠀⢿⡇⠀⣠⣾⣧⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⢹⣿⣿⣿⠃⢠⣤⣁⣀⣠⣤⢾⣿⣿⣿⡗⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⠹\n
+                  ⣿⣇⠀⠘⠇⠀⠀⠀⠁⠀⠙⢦⣤⡄⠀⠀⠀⠀⠀⠀⢻⡿⢁⠀⠸⢿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠂\n\n
+                  This server is restricted to authorized users only. All activities on this system are logged.\n
+                  Unauthorized access will be fully investigated and reported to the appropriate law enforcement agencies.\n"
+        dest: /etc/banner.net
+        force: yes
+        group: root
+        owner: root
+        mode: 0744
+
+    - name: Modify sshd config to show the banner
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^# Banner none'
+        line: 'Banner /etc/banner.net'
+        backup: yes
+
+    - name: Restart sshd
+      service:
+        name: sshd
+        state: restarted
+
+    - name: SELINUX disabled
+      lineinfile:
+        path: /etc/sysconfig/selinux
+        regexp: '^SELINUX='
+        line: 'SELINUX=disabled'
+        backup: yes
+
+    - name: Install docker
+      yum:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Start and enable docker
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+- name: GitLab configs
+  hosts: gitlab
+  become: true
+
+  tasks:
+    - name: Install gitlab-ce
+      yum:
+        name: gitlab-ce
+        state: present
+
+    - name: Install gitlab-runner
+      yum:
+        name: gitlab-runner
+        state: present
+
+    - name: Create ssl directory for gitlab
+      file:
+        path: /etc/gitlab/ssl
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Copy alldomain.crt to /etc/gitlab/ssl as gitlab.fiipractic.lan.crt
+      copy:
+        src: /root/Ansible/cert/alldomains.crt
+        dest: /etc/gitlab/ssl/gitlab.fiipractic.lan.crt
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Copy alldomain.key to /etc/gitlab/ssl ass gitlab.fiipractic.lan.key
+      copy:
+        src: /root/Ansible/cert/alldomains.key
+        dest: /etc/gitlab/ssl/gitlab.fiipractic.lan.key
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Set registry_external_url in gitlab.rb
+      lineinfile:
+        path: /etc/gitlab/gitlab.rb
+        regexp: "^#?\\s*registry_external_url"
+        line: "registry_external_url 'https://gitlab.fiipractic.lan:5050'"
+        backup: yes
+
+    - name: Enable registry in gitlab.rb
+      lineinfile:
+        path: /etc/gitlab/gitlab.rb
+        regexp: "^#?\\s*gitlab_rails\\['registry_enabled'\\]"
+        line: "gitlab_rails['registry_enabled'] = true"
+        backup: yes
+
+    - name: Set registry port in gitlab.rb
+      lineinfile:
+        path: /etc/gitlab/gitlab.rb
+        regexp: "^#?\\s*gitlab_rails\\['registry_port'\\]"
+        line: "gitlab_rails['registry_port'] = '5050'"
+        backup: yes
+
+    - name: Set registry nginx listen port in gitlab.rb
+      lineinfile:
+        path: /etc/gitlab/gitlab.rb
+        regexp: "^#?\\s*registry_nginx\\['listen_port'\\]"
+        line: "registry_nginx['listen_port'] = 5050"
+        backup: yes
+
+    - name: Reconfigure gitlab-ce
+      command: gitlab-ctl reconfigure
+
+    - name: Start gitlab-ce
+      command: gitlab-ctl start

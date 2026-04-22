@@ -1,0 +1,141 @@
+---
+- name: Install and configure Netdata
+  hosts: app
+  become: yes
+
+  vars:
+    netdata_domain: "netdata.fiipractic.lan"
+    basic_auth_user: "Lyo"
+    basic_auth_password: "kafka"
+    ssl_certificate_path: "/etc/nginx/ssl/alldomains.crt"
+    ssl_certificate_key_path: "/etc/nginx/ssl/alldomains.key"
+
+  tasks:
+    - name: Install netdata
+      yum:
+        name: netdata
+        state: present
+
+    - name: Install nginx
+      yum:
+        name: nginx
+        state: present
+
+    - name: Install httpd-tools
+      yum:
+        name: httpd-tools
+        state: present
+
+    - name: Start and enable netdata
+      service:
+        name: netdata
+        state: started
+        enabled: true
+
+    - name: Start and enable nginx
+      service:
+        name: nginx
+        state: started
+        enabled: true
+  
+    - name: Create ssl directory for nginx
+      file:
+        path: /etc/nginx/ssl
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Copy alldomains certificate
+      copy:
+        src: ./cert/alldomains.crt
+        dest: /etc/nginx/ssl/alldomains.crt
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Copy alldomains private key
+      copy:
+        src: ./cert/alldomains.key
+        dest: /etc/nginx/ssl/alldomains.key
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Create htpasswd file for basic auth
+      shell: htpasswd -bc /etc/nginx/.htpasswd {{ basic_auth_user }} {{ basic_auth_password }}
+      changed_when: true
+
+    - name: Ensure maintenance directory exists
+      file:
+        path: /var/www/example
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create maintenance page
+      copy:
+        dest: /var/www/example/maintenance.html
+        content: |
+          <html>
+          <head><title>Maintenance</title></head>
+          <body>
+            <h1>Netdata is unavailable at the moment</h1>
+            <p>If you are not the owner of this webiste please try accesing at a later date.</p>
+          </body>
+          </html>
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Configure nginx for netdata reverse proxy
+      copy:
+        dest: /etc/nginx/conf.d/netdata.conf
+        content: |
+          server {
+              listen 80;
+              server_name {{ netdata_domain }};
+
+              return 301 https://$host$request_uri;
+          }
+
+          server {
+              listen 443 ssl;
+              server_name {{ netdata_domain }};
+
+              ssl_certificate {{ ssl_certificate_path }};
+              ssl_certificate_key {{ ssl_certificate_key_path }};
+
+              auth_basic "Netdata Login";
+              auth_basic_user_file /etc/nginx/.htpasswd;
+
+              location / {
+                  proxy_pass http://127.0.0.1:19999/;
+                  proxy_http_version 1.1;
+
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+
+                  proxy_intercept_errors on;
+                  error_page 502 503 504 =503 /maintenance.html;
+              }
+
+              location = /maintenance.html {
+                  root /var/www/example;
+                  internal;
+              }
+          }
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Test nginx configuration
+      command: nginx -t
+
+    - name: Restart nginx
+      service:
+        name: nginx
+        state: restarted
