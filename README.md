@@ -3,8 +3,14 @@
 ## Descriere generală
 În cadrul proiectului au fost create două mașini virtuale, `app.fiipractic.lan` și `gitlab.fiipractic.lan`, 
 care au fost folosite pentru a configura servicii precum nginx, GitLab, GitLab Container Registry, Docker, 
-Netdata și Ansible. Aplicația utilizată a fost o aplicație Spring Boot, care a fost containerizată și 
-integrată într-un pipeline automat de build și deploy.
+Netdata și Ansible. 
+
+Pornirea și configurarea inițială se fac cu Vagrantfile, iar automatizarea post-provisioning se fac cu 
+playbook-ul din Ansible/common.yaml. Apoi pentru partea de deploy a aplicatiei, codul acesteia ajunge pe GitLab, 
+unde pipeline-ul din gitlab_pipeline/.gitlab-ci.yml rulează testele, construiește imaginea Docker, 
+o publică în registry și apoi face deploy automat cu gitlab_pipeline/deploy.yaml. 
+Aplicația rulează containerizat prin docker si se foloseste __Maven__ pentru build-ul aplicatiei.
+
 
 ## Structura proiectului
 ```text
@@ -42,7 +48,7 @@ FiiPractic-DevOps/
 ## Descrierea componentelor:
  ### 1. **Vagrantfile**
 - prin intermediul acestuia se creeaza cele doua masini virutal `app.fiipractic.lan` și `gitlab.fiipractic.lan`
-care au ip-urile `192.168.56.10` si `192.168.56.20` respectiv, configurate conform celor cerute. Pentru masinile virtuale este folosit **libvirt/QUEMU**.
+care au ip-urile `192.168.56.10` si `192.168.56.20` respectiv, configurate conform celor cerute. Pentru masinile virtuale este folosit **libvirt/QEMU**.
 - __In plus__ am adaugat in etapa de provision un pas care copiaza cheia de pe host si o copiaza pe cele doua masini virtuale ( `echo '#{host_key}' >> /root/.ssh/authorized_keys`)
 astfel incat sa nu mai fie nevoie de parola cand vom face conexiunea ssh de pe masina gazda. Pe langa aceasta am ales sa fac configurarea cu ajutorul unui hash din Ruby
 pentru a nu repeta de mai multe ori aceleasi instructiuni de config pentru cele doua masini.
@@ -57,7 +63,7 @@ pentru a nu repeta de mai multe ori aceleasi instructiuni de config pentru cele 
   * realizam si configurari pentru Gitlab in mod automat:
     * configurarea certificatelor SSL pentru domeniul gitlab.fiipractic.lan
     * configurarea registry-ului Docker integrat (registry_external_url, registry_enabled, porturi)
-    * aplicarea configurarilor prin comanda `gitlab-ctl reconfigure` si `gitlab-ctl restart`
+    * aplicarea configurarilor prin comanda `gitlab-ctl reconfigure` si `gitlab-ctl start`
 
 ### 2.2 **netdata.yaml (Ansible/netdata.yaml)**
 - Playbook folosit pentru a configura nginx ca si un reverse proxy pentru interfata netdata si de asemenea seteaza basic auth
@@ -102,7 +108,7 @@ testare, build, publicarea imaginii Docker si deploy.
 care ajuta la controlul modului in care pipeline-ul este declansat in functie de branch-uri si reguli de workflow.
 - stagiul `test` ruleaza testele backend-ului intr-un mediu izolat, printr-un user non-root
 - stagiul `build` construieste imaginea Docker a aplicatiei backend
-- stagiul `push` publica imaginea construita in Docker Local Repository
+- stagiul `push` publica imaginea construita in GitLab Container Registry
 - stagiul deploy realizeaza deploy-ul aplicatiei pe `app.fiipractic.lan` folosind un playbook Ansible(`deploy.yaml`)
 
 ### 4. **bash_scripts/**
